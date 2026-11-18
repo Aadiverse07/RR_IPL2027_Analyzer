@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
-from src.deliverables import build_dashboard, data as D
+from src.deliverables import build_dashboard, build_report, data as D
 
 
 def test_payload_uses_frozen_rankings_and_preserves_counts():
@@ -69,3 +70,70 @@ def test_frozen_inputs_have_recorded_hashes():
     assert set(payload['provenance']['frozen_hashes']) == set(D.FROZEN)
     assert payload['verification']['independent_all_pass'] is True
     assert payload['verification']['frozen_inputs_unchanged'] is True
+
+
+def _render_report(payload):
+    return build_report.Report(payload, None).build().render()
+
+
+def test_report_tier_table_matches_frozen_context_status():
+    payload = D.build_payload()
+    context = list(csv.DictReader((D.PHASE5 / 'context_status.csv').open()))
+    source = {r['role']: r for r in context if r['context'] == 'chase'}
+    tiers = build_report.Report(payload, None)._tier_rows()
+    assert [(r[0], r[2], r[3]) for r in tiers] == [
+        ('High', source['bowler']['tier_high'], source['batter']['tier_high']),
+        ('Moderate', source['bowler']['tier_moderate'], source['batter']['tier_moderate']),
+        ('Limited', source['bowler']['tier_limited'], source['batter']['tier_limited']),
+        ('Insufficient', source['bowler']['tier_insufficient'], source['batter']['tier_insufficient']),
+    ]
+    assert tiers[1][2] == '9' and tiers[2][2] == '27' and tiers[3][2] == '367'
+    assert 'Of which published' in _render_report(payload)
+
+
+def test_report_uses_recorded_phase6_pytest_pass_total():
+    log = (D.ROOT / 'reports/phase_6/logs/pytest_phase6.txt').read_text()
+    import re
+    match = re.search(r'(\d+) passed(?:,\s*(\d+) failed)?', log)
+    assert match
+    passed = int(match.group(1))
+    total = passed + int(match.group(2) or 0)
+    assert build_report.phase6_pytest_count() == (passed, total)
+    assert f'{passed} / {total}' in _render_report(D.build_payload())
+
+
+def test_report_discloses_sensitivity_eligibility_from_frozen_csv():
+    payload = D.build_payload()
+    rows = {r['scenario']: r for r in csv.DictReader(
+        (D.ROOT / 'reports/phase_5/sensitivity_rank.csv').open()) if r['role'] == 'batter'}
+    assert rows['tau2_REML']['eligible'] == '0'
+    assert rows['single_stage_combination']['eligible'] == '0'
+    assert rows['variance_E1']['overlap_with_primary'] == '0'
+    html = _render_report(payload)
+    assert '0/8 batters survive' in html
+    assert 'REML variance (0 eligible)' in html
+    assert 'single-stage combination (0 eligible)' in html
+
+
+def test_report_top_three_stability_comes_from_rank_stability_csv():
+    payload = D.build_payload()
+    rows = list(csv.DictReader((D.ROOT / 'reports/phase_5/rank_stability.csv').open()))
+    top = [r for r in rows if r['role'] == 'bowler' and r['context'] == 'chase'][:3]
+    assert int(float(top[2]['share_top10']) * 100) == 96
+    html = _render_report(payload)
+    assert 'under resampling (96–100%)' in html
+
+
+def test_executive_page_lists_all_frozen_bowlers_and_batters():
+    payload = D.build_payload()
+    html = _render_report(payload)
+    executive = re.search(r'<section class="page executive" data-page="3">(.*?)</section>',
+                          html, re.S).group(1)
+    for role in ('bowler', 'batter'):
+        csv_path = D.PHASE5 / f'ranking_{role}_chase.csv'
+        for row in csv.DictReader(csv_path.open()):
+            assert row['player_name'] in executive
+            for value in (f"{float(row['S_star']):+.3f}",
+                          f"[{float(row['S_ci90_low']):+.3f}, {float(row['S_ci90_high']):+.3f}]"):
+                assert value in executive
+            assert row['evidence_tier'] in executive

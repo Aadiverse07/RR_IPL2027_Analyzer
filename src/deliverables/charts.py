@@ -121,7 +121,7 @@ def fig_context_rates() -> tuple[str, dict[str, float]]:
     ax.set_ylabel('Runs conceded per ball', fontsize=8.6)
     _clean(ax, 'y')
     ax.axhline(1.386, color=T.INK_FAINT, linewidth=0.9, linestyle=(0, (4, 3)))
-    ax.text(3.42, 1.405, 'chase baseline 1.39', fontsize=7.2, color=T.INK_FAINT, ha='right')
+    ax.text(1.02, 1.53, 'chase baseline 1.39', fontsize=7.2, color=T.INK_FAINT, ha='center')
     ax.annotate('+18% vs baseline\n(PH3-01: state-confounded)', xy=(2, 1.62),
                 xytext=(2.05, 1.86), fontsize=7.6, color=T.AMBER, ha='center')
     fig.suptitle('')
@@ -162,7 +162,7 @@ def fig_funnel(payload: dict[str, Any]) -> str:
         ax.text(9.72, y + 0.55, value, fontsize=11.4, fontweight='bold',
                 color=T.PINK if index == 5 else T.INK, ha='right', va='center')
         if index < len(stages) - 1:
-            ax.add_patch(FancyArrowPatch((5.0, y + 0.12), (5.0, y - 0.03),
+            ax.add_patch(FancyArrowPatch((5.0, y + 0.08), (5.0, y - 0.13),
                                          arrowstyle='-|>', mutation_scale=9,
                                          color=T.INK_FAINT, linewidth=0.9))
     fig.text(0.0, 1.015, 'From 187,968 balls to 18 published players',
@@ -189,22 +189,23 @@ def _ci_figure(rows: list[dict[str, Any]], title: str, subtitle: str,
         ax.scatter([row['S_star']], [y], s=62, color=colour, zorder=5,
                    edgecolor='white', linewidth=1.2)
         ax.text(row['S_ci90_high'] + 0.012, y, f"{row['S_star']:+.3f}",
-                fontsize=8.2, va='center', color=T.INK, fontweight='bold')
+                fontsize=14.2, va='center', color=T.INK, fontweight='bold')
     ax.axvline(0, color=T.INK, linewidth=1.0)
-    ax.text(0.004, -0.62, 'zero = average in pressure', fontsize=7.2, color=T.INK_SOFT)
+    ax.text(0.004, -0.78, 'zero = average in pressure', fontsize=14, color=T.INK_SOFT)
     ax.set_yticks(ys)
     ax.set_yticklabels([
         f"{row['rank']}. {row['player_name']} · {row['evidence_tier']}"
         for row in rows
-    ], fontsize=8.4, color=T.INK)
+    ], fontsize=14.2, color=T.INK)
     span_low = min(r['S_ci90_low'] for r in rows)
     span_high = max(r['S_ci90_high'] for r in rows)
     ax.set_xlim(span_low - 0.03, span_high + 0.10)
     ax.set_ylim(-0.7, n - 0.2)
-    ax.set_xlabel('Performance Score S* with 90% interval', fontsize=8.4)
+    ax.set_xlabel('Performance Score S* with 90% interval', fontsize=14.2)
     _clean(ax, 'x')
-    fig.text(0.0, 1.015, title, fontsize=12.5, fontweight='bold', color=T.INK, ha='left')
-    fig.text(0.0, 0.972, subtitle, fontsize=8.2, color=T.INK_FAINT, ha='left')
+    fig.text(0.0, 1.03, title, fontsize=16, fontweight='bold', color=T.INK, ha='left')
+    fig.text(0.0, 0.95, subtitle, fontsize=12, color=T.INK_FAINT, ha='left')
+    ax.tick_params(axis='x', labelsize=13.5)
     fig.tight_layout()
     return _save(fig, filename)
 
@@ -255,17 +256,18 @@ def fig_pressure_vs_baseline(payload: dict[str, Any]) -> str:
     ax.set_xlim(low - pad, label_x + pad * 0.4)
     ax.set_ylim(-0.7, len(rows) - 0.25)
     ax.set_xlabel('Runs conceded per ball (lower is better)', fontsize=8.4)
-    ax.text(label_x, len(rows) - 0.55, 'change', fontsize=7.0,
-            color=T.INK_FAINT, ha='right')
+    ax.text(1.0, 1.04, 'Change', fontsize=9.0, color=T.INK_FAINT,
+            ha='right', transform=ax.transAxes, clip_on=False)
     _clean(ax, 'x')
     ax.scatter([], [], s=46, color=T.BLUE, label='Baseline (non-pressure, same context)')
     ax.scatter([], [], s=54, color=T.PINK, label='Pressure deliveries')
-    ax.legend(loc='upper left', fontsize=7.6)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.16), ncol=2,
+              fontsize=8.2, columnspacing=1.0, handletextpad=0.5)
     fig.text(0.0, 1.015, 'The signal is the gap, not the average',
              fontsize=12.5, fontweight='bold', color=T.INK, ha='left')
     fig.text(0.0, 0.972, 'Raw runs per ball for the ten published bowlers. Negative change = better under pressure. The score adjusts for the situation, so this gap is context, not the score itself.',
              fontsize=7.6, color=T.INK_FAINT, ha='left')
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.08, 1, 0.94))
     return _save(fig, 'pressure_vs_baseline.png')
 
 
@@ -282,14 +284,11 @@ def fig_bootstrap(payload: dict[str, Any]) -> str:
                                       gridspec_kw={'width_ratios': [1.15, 1]})
     left.barh(ys, share, height=0.55, color=[T.PINK if s >= 0.9 else T.PINK_SOFT for s in share],
               edgecolor=T.PINK, linewidth=0.8)
-    for y, value in zip(ys, share):
-        left.text(min(value + 0.015, 1.0), y, f'{value * 100:.0f}%', fontsize=8,
-                  va='center', color=T.INK, fontweight='bold')
-    left.set_xlim(0, 1.13)
+    left.set_xlim(0, 1.0)
     left.set_yticks(ys)
-    left.set_yticklabels(names, fontsize=8.4)
-    left.set_xlabel('Share of 200 resamples kept in the top 10', fontsize=7.8)
-    left.set_title('How often the place survives', fontsize=9, loc='left', color=T.INK)
+    left.set_yticklabels(names, fontsize=15)
+    left.set_xlabel('Share of 200 resamples kept in the top 10', fontsize=15)
+    left.set_title('How often the place survives', fontsize=16, loc='left', color=T.INK)
 
     for y, low, high, mid in zip(ys, p05, p95, median):
         right.plot([low, high], [y, y], color=T.BLUE, linewidth=2.2, alpha=0.3,
@@ -298,14 +297,19 @@ def fig_bootstrap(payload: dict[str, Any]) -> str:
             right.plot([edge, edge], [y - 0.15, y + 0.15], color=T.BLUE, linewidth=0.9, alpha=0.7)
         right.scatter([mid], [y], s=31, color=T.BLUE, edgecolor='white', linewidth=1.0, zorder=4)
     right.set_xlim(0, 36)
-    right.set_xlabel('Resampled rank: median with 5–95% range', fontsize=7.8)
-    right.set_title('Where the place actually sits', fontsize=9, loc='left', color=T.INK)
+    right.set_xlabel('Resampled rank: median with 5–95% range', fontsize=15)
+    right.set_title('Where the place actually sits', fontsize=16, loc='left', color=T.INK)
+    left.set_yticklabels(names, fontsize=15)
+    right.tick_params(axis='both', labelsize=14)
+    for y, value in zip(ys, share):
+        left.text(min(value - 0.015, 0.97), y, f'{value * 100:.0f}%', fontsize=15,
+                  va='center', ha='right', color=T.INK, fontweight='bold')
     for ax in (left, right):
         _clean(ax, 'x')
     fig.text(0.0, 1.02, 'The top three are stable; the rest of the list is not',
-             fontsize=12.5, fontweight='bold', color=T.INK, ha='left')
-    fig.text(0.0, 0.975, 'Match-block bootstrap, 200 resamples, fixed empirical-Bayes fit. Resampling is at match level, not ball level.',
-             fontsize=8.0, color=T.INK_FAINT, ha='left')
+             fontsize=19, fontweight='bold', color=T.INK, ha='left')
+    fig.text(0.0, 0.97, 'Match-block bootstrap, 200 resamples, fixed empirical-Bayes fit. Resampling is at match level, not ball level.',
+             fontsize=13, color=T.INK_FAINT, ha='left')
     fig.tight_layout()
     return _save(fig, 'bootstrap.png')
 
@@ -344,8 +348,8 @@ def fig_shrinkage(payload: dict[str, Any]) -> str:
     raw_span = max(raw) - min(raw)
     shrunk_span = max(shrunk) - min(shrunk)
     ax.text(-0.68, 0.245,
-            f'Raw spread {raw_span:.2f}, shrunk spread {shrunk_span:.2f}\n'
-            f'{100 * (1 - shrunk_span / raw_span):.0f}% of the raw spread is sampling noise',
+            f'Shrinkage compresses the spread by {100 * (1 - shrunk_span / raw_span):.0f}% '
+            f'({raw_span:.2f} to {shrunk_span:.2f})',
             fontsize=8.2, color=T.INK, va='top', linespacing=1.8)
     ax.text(-0.68, 0.175,
             f"Arrow: {lead['player_name']}\nraw {lead['A_raw']:.2f}, shrunk to {lead['A_star']:.2f}",
@@ -381,10 +385,10 @@ def fig_eligibility_hist(payload: dict[str, Any]) -> str:
         ax.text(0.26, 0.80, note, fontsize=7.0, color=T.INK_FAINT,
                 transform=ax.transAxes,
                 bbox=dict(facecolor='white', edgecolor='none', pad=1.0))
-        ax.set_xlabel('Reliability B_A', fontsize=7.8)
+        ax.set_xlabel('Reliability B_A', fontsize=10.5)
         ax.set_xlim(0, 0.60)
         _clean(ax, 'y')
-    axes[0].set_ylabel('Players (log scale)', fontsize=8.2)
+    axes[0].set_ylabel('Players (log scale)', fontsize=10.5)
     fig.text(0.0, 1.05, 'The reliability gate is what makes the lists short',
              fontsize=12.5, fontweight='bold', color=T.INK, ha='left')
     fig.text(0.0, 1.0, 'Pink line = approved 0.20 threshold. Innings-1 bowling stops at 0.150, so no ranking exists for it.',
@@ -443,24 +447,26 @@ def fig_sensitivity(payload: dict[str, Any]) -> str:
     colours = [T.RED if r['scenario'] == 'variance_E1' else T.PINK for r in selected]
     ax.barh(ys, values, height=0.6, color=colours, alpha=0.92)
     for y, r, value in zip(ys, selected, values):
-        ax.text(value + 0.018, y,
-                f"{r['overlap_with_primary']}/10 kept  ·  {r['eligible']} eligible",
-                fontsize=8.6, va='center', color=T.INK_SOFT)
+        # Dark text just outside the bar ends for readability.
+        label_x = min(value + 0.035, 0.98)
+        ax.text(label_x, y, f"{r['overlap_with_primary']}/10",
+                fontsize=9.2, va='center', ha='left', color=T.INK)
     ax.set_yticks(ys)
     ax.set_yticklabels([labels[r['scenario']] for r in selected], fontsize=9.4)
-    ax.set_xlim(0, 1.45)
-    ax.set_xlabel('Names kept from the published 10 bowlers', fontsize=8.8)
+    ax.set_xlim(0, 1.0)
+    ax.set_xticks([0, .2, .4, .6, .8, 1.0], ['0%', '20%', '40%', '60%', '80%', '100%'])
+    ax.set_xlabel('Share of published names kept', fontsize=10.5)
     _clean(ax, 'x')
     fig.text(0.0, 1.06, 'What survives a change of method — and what does not',
              fontsize=13.5, fontweight='bold', color=T.INK, ha='left')
     fig.text(0.0, 1.015,
              'Bowlers: 10 published. The score weight barely moves the list; the rejected E1 '
              'variance estimator replaces all of it.',
-             fontsize=8.6, color=T.INK_FAINT, ha='left')
+             fontsize=9.6, color=T.INK_FAINT, ha='left')
     fig.text(0.0, -0.10,
              'Batters: 8/8 kept under both score weights, 6/8 with IPL evidence only, 0/8 under '
              'E1; no batter is eligible under REML or the single-stage combination.',
-             fontsize=8.6, color=T.INK_FAINT, ha='left')
+             fontsize=9.6, color=T.INK_FAINT, ha='left')
     fig.tight_layout()
     return _save(fig, 'sensitivity.png')
 

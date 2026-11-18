@@ -8,7 +8,9 @@ payload as the dashboard and the deck.
 from __future__ import annotations
 
 import html
+import csv
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -45,6 +47,16 @@ def fmt_int(value: Any) -> str:
     if value is None:
         return '—'
     return f'{int(value):,}'
+
+
+def phase6_pytest_count() -> tuple[int, int]:
+    """Read the recorded focused Phase 6 pytest result; never hand-type it."""
+    log = (D.ROOT / 'reports/phase_6/logs/pytest_phase6.txt').read_text(encoding='utf-8')
+    match = re.search(r'(\d+) passed(?:,\s*(\d+) failed)?', log)
+    if not match:
+        raise ValueError('Phase 6 pytest log has no parseable pass count')
+    passed, failed = int(match.group(1)), int(match.group(2) or 0)
+    return passed, passed + failed
 
 
 def table(headers: Sequence[str], rows: Sequence[Sequence[str]],
@@ -110,6 +122,21 @@ body {
   page-break-after:always; break-after:page;
 }
 .page:last-child { page-break-after:auto; break-after:auto; }
+.page.executive { padding:12mm 15mm 12mm; font-size:8.2pt; line-height:1.32; }
+.executive h1 { font-size:18pt; margin-bottom:2.5mm; }
+.executive h2 { font-size:10.5pt; margin:3mm 0 1.5mm; }
+.executive h3 { font-size:8pt; margin:1.4mm 0 .8mm; }
+.executive table { font-size:6.7pt; margin:1mm 0 1.5mm; }
+.executive th { font-size:6pt; padding:.5mm .8mm; }
+.executive td { padding:.45mm .8mm; }
+.executive .stats { gap:2mm; margin:2mm 0 3mm; }
+.executive .stat { padding:1.8mm 2mm; }
+.executive .sv { font-size:12pt; }
+.executive .sn, .executive .small, .executive .cap { font-size:6.8pt; }
+.executive .cb { font-size:7.2pt; line-height:1.3; }
+.executive li { margin-bottom:.8mm; }
+.appendix-d table { font-size:6.4pt; margin:1mm 0 1.5mm; }
+.appendix-d td, .appendix-d th { padding:.55mm .8mm; }
 .page.dark { background:var(--night); color:#F5F2EB; }
 .page.dark .muted, .page.dark .cap { color:#A9B4C4; }
 .page.dark .rule { border-color:#2A3648; }
@@ -275,7 +302,7 @@ class Report:
                     f'{body}<div class="footer"><span>{esc(page["footer"])}</span>'
                     f'<span class="num">{index} / {total}</span></div></section>')
         return ('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
-                f'<title>SupeRR Selector · Season 2 · Phase 6 report</title>'
+                f'<title>SupeRR Selector · Season 2 · Round 1 Report</title>'
                 f'<style>{CSS}</style></head><body>{"".join(parts)}</body></html>')
 
     # ------------------------------------------------------------------- pages
@@ -309,7 +336,7 @@ class Report:
         self.page('Cover', '', f"""
 <div class="band"></div>
 <div class="inner">
-  <div class="kicker">SupeRR Selector · Season 2 · Phase 6</div>
+  <div class="kicker">Unstop x Rajasthan Royals - SupeRR Selector Season 2 - Round 1 - Methodology and results report</div>
   <h1>Pressure performance,<br>measured honestly.</h1>
   <div class="sub">A situation-adjusted shortlist of T20 players, with the uncertainty,
   the exclusions and the failure modes reported alongside it.</div>
@@ -325,6 +352,7 @@ class Report:
       {fmt_int(head['matches'])} matches · {fmt_int(head['deliveries'])} deliveries</div>
     </div>
   </div>
+  <p class="v" style="margin-top:10mm"><Deo Raj Singh><br>Submission date: 18 November 2026</p>
   <div class="facts">
     <div class="fact"><b>Read the intervals</b>Every published 90% interval contains zero.
     A point estimate is not a verdict.</div>
@@ -335,7 +363,7 @@ class Report:
   </div>
 </div>
 <div class="note">Communication build only: no retraining, no threshold change, no re-ranking.</div>
-""", dark=True, cls='cover', footer='SupeRR Selector · Season 2 · Phase 6 report')
+""", dark=True, cls='cover', footer='Round 1 report')
 
     def contents(self) -> None:
         items = [
@@ -346,8 +374,8 @@ class Report:
             ('05', 'Empirical-Bayes shrinkage', 8),
             ('06', 'Reliability is not performance', 9),
             ('07', 'How players were selected', 10),
-            ('08', 'Final results — bowlers', 11),
-            ('08', 'Final results — batters', 12),
+            ('08a', 'Final results — bowlers', 11),
+            ('08b', 'Final results — batters', 12),
             ('09', 'First-innings bowling', 13),
             ('10', 'Sensitivity', 14),
             ('11', 'Uncertainty', 15),
@@ -399,17 +427,24 @@ report reproduces the Phase 5 outputs; it does not recompute them.</p>
 
     def executive(self) -> None:
         head = self.p['headline']
-        rows = []
-        for row in self.p['rankings']['bowler_chase'][:3]:
-            rows.append([str(row['rank']), esc(row['player_name']),
-                         fmt_signed(row['S_star']),
-                         f"[{fmt_signed(row['S_ci90_low'])}, {fmt_signed(row['S_ci90_high'])}]",
-                         f"{row['shrinkage_A']:.2f}", row['evidence_tier']])
+        batter_sens = {r['scenario']: r for r in self.p['sensitivity']
+                       if r['role'] == 'batter'}
+        rem_l = batter_sens['tau2_REML']['eligible']
+        single = batter_sens['single_stage_combination']['eligible']
+        e1_kept = batter_sens['variance_E1']['overlap_with_primary']
+        batter_count = len(self.p['rankings']['batter_chase'])
+        def shortlist(role: str, label: str) -> str:
+            rows = [[str(r['rank']), esc(r['player_name']), fmt_signed(r['S_star']),
+                     f"[{fmt_signed(r['S_ci90_low'])}, {fmt_signed(r['S_ci90_high'])}]",
+                     f'<span class="tier {r["evidence_tier"]}">{r["evidence_tier"]}</span>']
+                    for r in self.p['rankings'][f'{role}_chase']]
+            return (f'<h3>{label}</h3>' + table(['#', 'Player', 'S*', '90% interval', 'Tier'],
+                    rows, ['7%', '27%', '12%', '39%', '15%'], 'tight xs names-nowrap',
+                    right=(0, 2, 3)))
         body = f"""
-<p class="lede">Eighteen players — ten chase bowlers and eight chase batters — have
-pressure evidence strong enough to publish under a rule fixed before the calculation.
-No first-innings ranking exists, and the order inside either list is not statistically
-separable.</p>
+<p class="lede">Ten chase bowlers and eight chase batters clear the pre-registered
+reliability rule. No first-innings ranking exists; neither list has statistically
+separable ranks.</p>
 {stats([
     (str(head['bowler_published']), 'chase bowlers published', f"from {head['bowler_eligible']} eligible"),
     (str(head['batter_published']), 'chase batters published', f"from {head['batter_eligible']} eligible"),
@@ -419,22 +454,14 @@ separable.</p>
 <div class="cols wide-left">
   <div>
     <h2>The claim we are willing to defend</h2>
-    <p>Across {fmt_int(head['matches'])} matches and {fmt_int(head['deliveries'])}{' '}
-    deliveries, {head['bowler_scored']} bowlers and {head['batter_scored']} batters were
-    scored on situation-adjusted pressure performance. {head['bowler_eligible']} bowlers
-    and {head['batter_eligible']} batters cleared the reliability gate that the method
-    pre-registered. That number — eighteen — is the finding: pressure evidence is scarce,
-    and a longer list would have required a weaker rule.</p>
-    <p>The order is reported because the rule produces one, not because the data support
-    one. The two claims are different, and the rest of this report keeps them apart.</p>
+    <p>Across {fmt_int(head['matches'])} matches and {fmt_int(head['deliveries'])} deliveries,
+    {head['bowler_eligible']} bowlers and {head['batter_eligible']} batters cleared the
+    frozen gate. A longer list would require a weaker rule.</p>
   </div>
   <div>
-    <h2 class="tight-top">Top three, with intervals</h2>
-    {table(['#', 'Bowler', 'S*', '90% interval', 'B_A', 'Tier'], rows,
-           ['7%', '29%', '10%', '30%', '10%', '14%'], 'tight names-nowrap xs',
-           right=(0, 2, 3, 4))}
-    <p class="cap">Point estimates only: every interval contains zero. The full ten are on
-    page 11.</p>
+    <h2 class="tight-top">Published lists, in full</h2>
+    <div class="small">{shortlist('bowler', 'Chase bowlers (10)')}
+    {shortlist('batter', 'Chase batters (8)')}</div>
   </div>
 </div>
 <h2>What must travel with every quotation of this list</h2>
@@ -448,20 +475,14 @@ separable.</p>
     <li><strong>Every adjacent pair of bowler intervals overlaps.</strong> Ranks 2 and 3
     differ by 0.00008 in S*. The order is not statistically separable (PH5-01), and the
     same holds for the batter list.</li>
-    <li><strong>The bootstrap holds the empirical-Bayes fit fixed.</strong> It measures how
-    fragile a rank is given this model, not model uncertainty itself. The pre-registered
-    design that re-estimated variance was measured and rejected before publication
-    (F5-02).</li>
-    <li><strong>The result is method-dependent.</strong> Under the rejected clustered
-    variance estimator E1, none of the ten bowlers survives; under a single-stage
-    combination, two do. Both alternatives are shown in full in the sensitivity section.</li>
-    <li><strong>Exactly eight batters qualify.</strong> There is no ninth or tenth batter
-    in any deliverable, and none was added to fill the list (F4-01).</li>
-    <li><strong>First-innings bowling is a research finding, not a ranking.</strong> 377
-    bowlers were scored, none reached the reliability gate, and the context is
-    state-confounded (PH3-01, F4-02). T20I-only eligibility is zero in both roles
-    (PH5-02); the combined estimate is mainly IPL evidence and is not a claim that
-    performance transfers between formats.</li>
+    <li><strong>Bootstrap:</strong> the empirical-Bayes fit is fixed, so top-10 probabilities
+    describe rank stability conditional on this model, not model uncertainty (F5-02).</li>
+    <li><strong>Method sensitivity:</strong> under E1, {e1_kept}/{batter_count} batters survive;
+    under REML ({rem_l} eligible) or single-stage ({single} eligible), none is eligible.
+    E1 retains none of ten bowlers; single-stage retains two.</li>
+    <li><strong>Exactly eight batters qualify</strong> (F4-01). First-innings bowling is
+    separate: 377 scored, zero eligible, state-confounded (PH3-01, F4-02). T20I-only
+    eligibility is zero in both roles (PH5-02); no transferability claim is made.</li>
   </ol>
   </div>
 </div>
@@ -469,7 +490,8 @@ separable.</p>
 <code>outputs/final/phase5/ranking_bowler_chase.csv</code> and
 <code>ranking_batter_chase.csv</code>. The digests are in Appendix D.</p>
 """
-        self.page('Executive summary', 'Executive summary', body, footer='Executive summary')
+        self.page('Executive summary', 'Executive summary', body, footer='Executive summary',
+                  cls='executive')
 
     def _indep(self) -> dict[str, Any]:
         verification = self.p['verification']
@@ -648,6 +670,9 @@ death is not punished twice.</p>
                   footer='04 · Performance measurement')
 
     def shrinkage(self) -> None:
+        pool = [r for r in self.p['pool']['bowler_chase'] if r['pool_order']]
+        raw_span = max(r['A_raw'] for r in pool) - min(r['A_raw'] for r in pool)
+        shrunk_span = max(r['A_star'] for r in pool) - min(r['A_star'] for r in pool)
         body = f"""
 <p class="lede">Each player's record is pulled towards the league average by an amount
 that depends on how much evidence backs it. Without this step, a handful of pressure
@@ -670,10 +695,9 @@ overs would produce a spectacular and entirely unrepeatable ranking.</p>
     </ul>
   </div>
   <div>
-    <h2>How much of the spread is noise</h2>
-    <p>Across the 36 eligible bowlers, the raw pressure average spans 1.12 units. After
-    shrinkage the same players span 0.32. About 71% of the apparent difference between
-    them is sampling noise rather than a difference in skill.</p>
+    <h2>How much shrinkage compresses the spread</h2>
+    <p>Across the eligible bowlers, shrinkage compresses the raw spread of
+    {raw_span:.2f} to {shrunk_span:.2f} — {100 * (1 - shrunk_span / raw_span):.0f}%.</p>
     {callout('Shrinkage is not a penalty',
              'It is an admission of how much is actually known. A player with a thin '
              'record is not being punished; they are being reported as unknown, which is '
@@ -709,17 +733,31 @@ unpublishable.</p>
         'approved gate. First-innings bowling peaks at 0.150, so no player in that context '
         'is eligible.')}
 <h2>The four tiers</h2>
-{table(['Tier', 'B_A range', 'Chase bowlers', 'Chase batters', 'Published'], [
-    ['High', '0.50 and above', '0', '0', 'never reached'],
-    ['Moderate', '0.30 – 0.50', '4', '0', 'four bowlers'],
-    ['Limited', '0.20 – 0.30', '6', '8', 'every published batter'],
-    ['Insufficient', 'below 0.20', '367', '478', 'never published'],
-], ['18%', '22%', '20%', '20%', '20%'], 'tight', right=(2, 3))}
+{table(['Tier', 'B_A range', 'Chase bowlers', 'Chase batters', 'Of which published'],
+       self._tier_rows(), ['18%', '22%', '18%', '18%', '24%'], 'tight', right=(2, 3, 4))}
 <p class="cap">Counts from outputs/final/phase5/context_status.csv. The tier is a reading
 of B_A only; it says nothing about the sign or size of S*.</p>
 """
         self.page('Reliability is not performance', '06 · Reliability is not performance',
                   body, footer='06 · Reliability')
+
+    def _tier_rows(self) -> list[list[str]]:
+        rows = list(csv.DictReader((D.PHASE5 / 'context_status.csv').open(
+            newline='', encoding='utf-8')))
+        definitions = [('High', '0.50 and above', 'tier_high'),
+                       ('Moderate', '0.30 – 0.50', 'tier_moderate'),
+                       ('Limited', '0.20 – 0.30', 'tier_limited'),
+                       ('Insufficient', 'below 0.20', 'tier_insufficient')]
+        out = []
+        for tier, band, field in definitions:
+            counts = []
+            for role in ('bowler', 'batter'):
+                row = next(r for r in rows if r['role'] == role and r['context'] == 'chase')
+                counts.append(row[field])
+            published = ('9 bowlers' if tier == 'Moderate' else
+                         '27 bowlers; 8 batters' if tier == 'Limited' else 'none')
+            out.append([tier, band, *counts, published])
+        return out
 
     def selection(self) -> None:
         body = f"""
@@ -758,6 +796,9 @@ length min(10, eligible).
 
     def bowlers(self) -> None:
         rows = self.p['rankings']['bowler_chase']
+        stability = {(r['role'], r['player_id']): r for r in self.p['stability']}
+        top3_pct = [int(stability[('bowler', r['player_id'])]['share_top10'] * 100)
+                    for r in rows[:3]]
         assert len(rows) == 10, len(rows)
         moderate = [r for r in rows if r['evidence_tier'] == 'Moderate']
         moderate_summary = ', '.join(
@@ -792,7 +833,7 @@ Pressure balls are deliveries carrying the validated chase-pressure flag.</p>
       evidence to publish under the pre-registered rule.</li>
       <li><strong>{len(moderate)} reached Moderate</strong> — {moderate_summary or 'none'}.
       No bowler reaches High.</li>
-      <li><strong>The top three are stable</strong> under resampling (97–100%). Positions
+      <li><strong>The top three are stable</strong> under resampling ({min(top3_pct)}–{max(top3_pct)}%). Positions
       four to ten are not.</li>
     </ul>
     <h3>What cannot be said</h3>
@@ -833,20 +874,21 @@ Exactly eight rows; all Limited tier.</p>
 <div class="cols">
   <div>
     <h2>Why the list is shorter than the bowlers'</h2>
-    <p>445 batters were scored, but only eight reached B_A ≥ 0.20. A batter faces far
-    fewer pressure deliveries than a specialist bowler bowls, so the same gate admits
-    fewer of them. Six of the eight still carry at least 138 pressure balls, so this is a
-    volume problem rather than a data-quality one.</p>
+    <p>445 batters were scored, but only eight reached B_A ≥ 0.20. Phase 4 describes
+    B_A as a function of between-player variance relative to sampling variance: when
+    estimated player-to-player spread is small against sampling noise, evidence is
+    shrunk more strongly. The shortfall follows that reliability gate, not a comparison
+    of delivery volume. Source: Phase 4 report, §5 and §11 (F4-01 remains open).</p>
   </div>
   <div>
     <h2>The top-eight trap</h2>
     <p>Every scenario in the bootstrap keeps all eight, because the eligible set <em>is</em>
     eight. "P(top 10) = 100%" would therefore be an artefact of the list length, not a
     stability result. The report uses the resampled rank range instead: even the leader's
-    median rank is 2, with a 1–7 range.</p>
+    (Jaiswal) median rank is 2, with a 1–7 range.</p>
   </div>
 </div>
-<figure><img src="{ASSETS_REL}/batter_ci.png" alt="">
+<figure style="width:76%;margin:1mm auto"><img src="{ASSETS_REL}/batter_ci.png" alt="">
 <figcaption>Performance score with 90% intervals for the eight published batters. All
 eight are Limited tier and all eight intervals contain zero.</figcaption></figure>
 """
@@ -937,9 +979,7 @@ specification is the first bar; the rejected E1 estimator keeps none.</figcaptio
   <div>
     <h2>What is not</h2>
     <p>The variance estimator and the combination method change the answer substantially.
-    The rejected E1 estimator admits 307 bowlers and keeps none of the ten; single-stage
-    combination admits 13 and keeps two. Any claim that survives only under the approved
-    specification has to say so, and this report does.</p>
+    For batters, none is eligible under REML variance (0 eligible) or single-stage combination (0 eligible), and 0/8 survive under E1. The rejected E1 estimator admits 307 bowlers and keeps none of the ten; single-stage combination admits 13 and keeps two. Any claim that survives only under the approved specification has to say so, and this report does.</p>
   </div>
 </div>
 <p class="cap">Source: reports/phase_5/sensitivity_rank.csv. "Names kept" counts players
@@ -956,6 +996,8 @@ competing recommendation.</p>
         bowler_rows = self.p['rankings']['bowler_chase']
         lead = bowler_rows[0]
         lead_stability = stability.get(('bowler', lead['player_id']), {})
+        top_three_pct = [round(stability.get(('bowler', r['player_id']), {})
+                               .get('share_top10', 0) * 100) for r in bowler_rows[:3]]
         reading_note = (
             f"{esc(lead['player_name'])} scored {fmt_signed(lead['S_star'])} on a 90% "
             f"interval of {fmt_signed(lead['S_ci90_low'])} to "
@@ -997,7 +1039,7 @@ holds the numbers behind that sentence.</p>
     names is a sequence of point estimates rather than separable positions (PH5-01).</p>
     <h2>Resampling</h2>
     <p>Match-block bootstrap, 200 resamples with the empirical-Bayes fit held fixed. The
-    top three are retained in 97–100% of resamples; ranks six to ten in 40–55%, so a place
+    top three are retained in {min(top_three_pct)}–{max(top_three_pct)}% of resamples; ranks six to ten in 40–55%, so a place
     there is close to a coin-flip. The fixed fit is a documented limitation, not a claim
     that model uncertainty is small (F5-02).</p>
   </div>
@@ -1061,15 +1103,17 @@ as one. Source: outputs/final/phase5/format_specific_ranking.csv.</p>
     def limitations(self) -> None:
         rows = []
         for issue in self.p['issues']:
+            if issue['id'] in {'F6-01', 'F6-02'}:
+                continue
             rows.append([
                 f'<span class="mono">{esc(issue["id"])}</span>', esc(issue['title']),
                 esc(issue['status']),
             ])
         body = f"""
-<p class="lede">Nine documented limitations travel with this work. Two defects found
-during the Phase 6 build are also recorded below with their verified fixes. Presentation
-does not close any carried analytical limitation.</p>
+<p class="lede">Documented limitations travel with this work. Presentation does not close
+any carried analytical limitation.</p>
 {table(['ID', 'Limitation', 'Status'], rows, ['10%', '60%', '30%'], 'tight')}
+<p class="cap">Build note: F6-01 and F6-02 — fixed and verified in the Phase 6 engineering log.</p>
 <div class="cols">
   <div>
     <h2>What we will not say</h2>
@@ -1111,7 +1155,7 @@ does not close any carried analytical limitation.</p>
              'every displayed name, ID, score, interval and tier against the frozen CSVs'],
             ['Browser interaction checks', f"{browser.get('passed', '—')} / {browser.get('total', '—')}",
              'headless Chrome: routing, filters, sorting, drawer, mobile, no network'],
-            ['Phase 6 unit tests', f"{tests.get('passed', '—')} / {tests.get('total', '—')}",
+            ['Phase 6 unit tests', f"{phase6_pytest_count()[0]} / {phase6_pytest_count()[1]}",
              'pytest: payload guards, artifact shape, disclosure text'],
             ['Phase 5 internal', '15 / 15', 'frozen gate, unchanged'],
             ['Phase 5 independent', f"{self._indep()['checks']} / {self._indep()['checks']}",
@@ -1120,6 +1164,7 @@ does not close any carried analytical limitation.</p>
         body = f"""
 <p class="lede">Every number in this report can be checked against a frozen file, and the
 deliverables are generated from one payload so they cannot drift from each other.</p>
+<p class="cap">Source files are available on request; the licensed data pack is not redistributed.</p>
 {callout('Rebuild everything', '<span class="mono">python3 -m src.deliverables.run_phase6'
          '</span><br>Rebuilds the dashboard, deck and this report, re-runs every check and '
          'writes a JSON log to <span class="mono">reports/phase_6/logs/run_phase6.json'
@@ -1220,6 +1265,7 @@ F4-02).</p>
 <p class="cap">Reconciliation: 41 + 437 batter exclusions and 15 + 352 bowler exclusions
 sum to 845, the same figure shown in the funnel on page 10 and in
 <span class="mono">reports/phase_5/PHASE_5_REPORT.md</span>.</p>
+<p class="cap">B_A values here are for the combined estimate and differ from IPL-only B_A values on page 16.</p>
 """
         self.page('Appendix B · exclusions', 'Appendix B', body,
                   footer='Appendix B · exclusions')
@@ -1292,9 +1338,10 @@ not move while the deliverables were built.</p>
 <span class="mono">reports/audit_bundle/sha256_outputs.txt</span>. These Phase 5 digests
 were checked before and after the Phase 6 build and are unchanged: no model was fitted, no
 threshold moved, no rank recomputed.</p>
+<p class="cap">Source files are available on request; the licensed data pack is not redistributed.</p>
 """
         self.page('Appendix D · sources and frozen hashes', 'Appendix D', body,
-                  footer='Appendix D · sources')
+                  footer='Appendix D · sources', cls='appendix-d')
 
 
 def build(payload: dict[str, Any] | None = None,
@@ -1326,6 +1373,17 @@ def print_pdf() -> dict[str, Any]:
     finally:
         shutil.rmtree(profile, ignore_errors=True)
     import pypdf
+    reader = pypdf.PdfReader(str(PDF_PATH))
+    writer = pypdf.PdfWriter()
+    writer.clone_document_from_reader(reader)
+    writer.add_metadata({
+        '/Title': 'SupeRR Selector Season 2 - Round 1 Report',
+        '/Author': '<Deo Raj Singh>',
+    })
+    metadata_tmp = PDF_PATH.with_suffix('.metadata.pdf')
+    with metadata_tmp.open('wb') as stream:
+        writer.write(stream)
+    metadata_tmp.replace(PDF_PATH)
     reader = pypdf.PdfReader(str(PDF_PATH))
     return {'pdf': str(PDF_PATH.relative_to(D.ROOT)), 'pages': len(reader.pages),
             'bytes': PDF_PATH.stat().st_size, 'sha256': D.sha256(PDF_PATH)}
