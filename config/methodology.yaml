@@ -1,0 +1,126 @@
+# Owner-approved working constants transcribed from CODEX_MASTER_EXECUTION_PROMPT.md.
+# Do not add unapproved analytical defaults; unresolved values remain explicit.
+delivery_accounting:
+  legal_extras_excluded: ["wide", "Overstep"]
+  batter_ball_faced_excluded: ["wide"]
+  team_innings_total: "runs + extras1_runs + extras_2_runs"
+  bowler_charged_runs: "runs + wide/no-ball extras; byes and leg-byes excluded (Phase 0 semantic reconciliation pending)"
+innings:
+  legal_balls: 120
+  rate_scale_balls: 6
+dismissals:
+  bowler_credited_types: ["Bowled", "Caught", "Stump", "LBW", "Hit Wicket"]
+  not_bowler_credited_types: ["RunOut", "Retire Out", "Obstracting the field", "Obstructing the field"]
+data_quality_exceptions:
+  unresolved_dls_outcome_match_ids: ["24822", "28334", "48610"]
+  unresolved_target_match_ids: ["24822", "28334"] # Owner-approved treatment recorded 2026-11-18; retained but chase innings excluded.
+  phase2_exclude_chase_match_ids: ["24822", "28334"]
+scope:
+  ipl_comp_name_prefix: "IPL"
+  international_match_format: "T20I"
+  excluded_competitions:
+    - "Mens T20 Emerging Teams Asia Cup 2024"
+    - "Asia Cup Rising Stars 2025"
+  exclude_super_overs: true
+  regular_innings_max: 2
+  exclude_abandoned_or_no_result: true
+  revised_target_fields:
+    - revised_target
+    - first_inn_revised_overs
+    - second_inn_revised_overs
+pressure:
+  broad:
+    behind_par_z_min: 0.25
+    collapse_wickets_min: 2
+    collapse_legal_ball_window: 18
+    ahead_par_z_min: 0.25
+    quantile_top: 0.40
+  innings1_par:
+    minimum_legal_balls: 12
+    smoothing_neighbour_half_window: 1 # Operationalizes "neighbouring n" as n-1, n, n+1; ASSUMPTION until validated.
+    standard_deviation_ddof: 0 # Population SD across eligible match-level cumulative scores; ASSUMPTION.
+  innings1_batting:
+    behind_par_z_min: 0.5
+    collapse_wickets_min: 2
+    collapse_legal_ball_window: 12
+    combine_with: "OR"
+  innings1_bowling:
+    ahead_par_z_min: 0.5
+  chase:
+    quantile_top: 0.25
+    same_flag_for_batting_and_bowling: true
+    calibration_folds: 5
+    logistic_l2: 1.0
+    logistic_max_iterations: 80
+    logistic_tolerance: 0.000001
+    calibration_bins: 10
+    calibration_slope_min: 0.8
+    calibration_slope_max: 1.2
+    expected_calibration_error_max: 0.03
+    decile_deviation_max: 0.07
+    minimum_decile_count: 500
+    outcome_transition_min_sample: 25
+    broad_quantile_top: 0.40
+    quantile_method: "linear"
+    bootstrap_replicates: 1000
+    bootstrap_ci_low: 0.025
+    bootstrap_ci_high: 0.975
+    probability_clip: 0.000000001
+score:
+  primary_w: 0.70
+  sensitivity_w: [0.30, 0.50, 0.70]
+reliability:
+  eligibility_shrinkage_min: 0.20
+  tiers:
+    high_min: 0.50
+    moderate_min: 0.30
+    limited_min: 0.20
+formats:
+  primary: ["IPL", "T20I"]
+  separate_expectations: true
+  inverse_variance_combine_when_supported: true
+innings_phases:
+  powerplay_overs: [1, 6]
+  middle_overs: [7, 15]
+  death_overs: [16, 20]
+random_seed: 20261117 # Verification-only sampling seed; implementation detail, not an analytical threshold.
+
+verification:
+  manual_match_ids: ["14094", "14101", "13511", "13512", "13513"]
+
+# Owner-approved validation rule (MDR-2026-11-18-01). Validation only: these keys
+# are read by src/pressure/validate_chase_v2.py and MUST NOT feed flag construction.
+validation:
+  chase_direction_rule:
+    version: "2026-11-18.v2"
+    decision_record: reports/methodology/MDR-2026-11-18-01-chase-flag-direction.md
+    approved_by: owner
+    approved_date: "2026-11-18"
+    flag_semantics: "shared chase flag marks pressure on the chasing batting side"
+    expected_direction:
+      batter_runs: lower
+      bowler_runs: lower
+      batter_dot: higher
+      batter_dismissal: reported
+      bowler_dot: reported_aligned
+      bowler_dismissal: reported
+    mandatory_metrics: [batter_runs, bowler_runs]
+    directionally_consistent_metrics: [batter_dot]
+    disclosed_limitation_metrics: [batter_dismissal]
+    reversed_cell_min_flagged: 500
+    inconclusive_is_pass: false
+
+# Phase 3/4 performance modelling settings (SDR-2026-11-18-01).
+# Phase 3 reads these; it does not write them.
+performance:
+  version: "phase3-2026-11-18.v1"
+  scope_decision: reports/methodology/SDR-2026-11-18-01-phase3-scope.md
+  context_min_cell: 200
+  wicket_bin_cap: 3
+  score_weights:
+    A: 0.70
+    D: 0.30
+  lambda_stability_rule: "primary lambda estimated only if pooled CI lower bound > 0 and both format CI lower bounds > 0; otherwise PROVISIONAL-FALLBACK lambda=0"
+  mu_out_of_fold_folds: 5
+  sensitivity_lambda_multipliers: [0.0, 0.5, 1.5]
+  sensitivity_min_pressure_deliveries: 50

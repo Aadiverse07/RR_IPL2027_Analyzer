@@ -1,0 +1,31 @@
+# Local data and analytical outputs are not cleared for redistribution.
+data/raw/
+data/interim/
+data/processed/
+outputs/final/
+
+# Local reports can contain player-level results and audit material.
+reports/
+APPU_HANDOVER_AUDIT.md
+PROJECT_HANDOVER.md
+FAILURE_REGISTER.md
+CODEX_*.md
+inbox/
+outbox/
+
+# Local environment, credentials, caches, and temporary files.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+*.tmp
+*.log
